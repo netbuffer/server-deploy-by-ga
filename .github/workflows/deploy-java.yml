@@ -148,5 +148,6 @@ jobs:
         if: always() && env.DINGTALK_WEBHOOK != ''
         env:
           JOB_STATUS: ${{ job.status }}
+          WORKFLOW_INPUTS: ${{ toJson(inputs) }}
         run: |
           node "${GITHUB_WORKSPACE}/.github/scripts/send-dingtalk.js"
