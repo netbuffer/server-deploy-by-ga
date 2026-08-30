@@ -50,12 +50,12 @@ def should_keep_jar(jar_path, src_dir, manifest_rules, target_services=None):
     """依据 Manifest 规则及 target_services 选择性过滤 JAR"""
     filename = jar_path.name
 
-    # 基础排除
-    if filename.endswith(".original") or "wrapper" in filename:
+    # 基础排除 (.mvn, wrapper, original, etc.)
+    rel_parts = jar_path.relative_to(src_dir).parts
+    if filename.endswith(".original") or "wrapper" in filename or ".mvn" in rel_parts:
         return False
 
     # 提取模块名 (例如 workspace_src/gateway/target/gateway.jar -> gateway)
-    rel_parts = jar_path.relative_to(src_dir).parts
     mod_dir = rel_parts[0] if len(rel_parts) > 2 else ""
     service_name = mod_dir if mod_dir else filename.replace(".jar", "")
 
@@ -70,17 +70,17 @@ def should_keep_jar(jar_path, src_dir, manifest_rules, target_services=None):
         if not matched_service:
             return False
 
-    # 若无 Manifest 规则，兜底全部保留
+    # 若无 Manifest 规则，兜底保留
     if manifest_rules is None:
         return True
 
-    # 比对 Manifest 规则 (匹配模块名或 jar 文件名)
+    # 严格比对 Manifest 规则 (匹配模块名或 jar 文件名)
     for rule in manifest_rules:
-        if rule == mod_dir or rule == filename or rule in filename:
+        if rule == mod_dir or rule == filename or rule == service_name:
             return True
         if "*" in rule:
             import fnmatch
-            if fnmatch.fnmatch(mod_dir, rule) or fnmatch.fnmatch(filename, rule):
+            if fnmatch.fnmatch(mod_dir, rule) or fnmatch.fnmatch(filename, rule) or fnmatch.fnmatch(service_name, rule):
                 return True
     return False
 
