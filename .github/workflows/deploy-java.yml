@@ -98,12 +98,12 @@ jobs:
             git checkout "${{ env.USING_REF }}"
           }
 
-      # 6. 配置 Java 环境 (v6.0.0)
+      # 6. 配置 Java 环境 (Alibaba Dragonwell JDK 21)
       - name: Set up Java Environment
         uses: actions/setup-java@v6.0.0
         with:
           java-version: ${{ vars.JAVA_VERSION || '21' }}
-          distribution: 'temurin'
+          distribution: 'dragonwell'
           cache: maven
 
       # 7. 云端编译打包制品 (Java Maven)
