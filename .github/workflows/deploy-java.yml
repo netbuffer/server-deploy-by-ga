@@ -11,6 +11,10 @@ on:
         description: 'Git 分支 / Tag / Commit (默认: main)'
         required: false
         default: 'main'
+      deploy_service:
+        description: '指定部署的服务模块名称 (如: gateway 或 user-server，多个用逗号隔开，默认: all)'
+        required: false
+        default: 'all'
       server_artifact_dir:
         description: '服务器接收制品的存放目录'
         required: false
@@ -41,6 +45,12 @@ jobs:
             TARGET_REF="main"
           fi
           echo "USING_REF=$TARGET_REF" >> $GITHUB_ENV
+
+          DEPLOY_SERVICE="${{ inputs.deploy_service }}"
+          if [ -z "$DEPLOY_SERVICE" ]; then
+            DEPLOY_SERVICE="all"
+          fi
+          echo "TARGET_DEPLOY_SERVICE=$DEPLOY_SERVICE" >> $GITHUB_ENV
 
           ARTIFACT_DIR="${{ inputs.server_artifact_dir }}"
           if [ -z "$ARTIFACT_DIR" ]; then
@@ -100,20 +110,29 @@ jobs:
       - name: Build Artifacts with Maven
         run: |
           cd workspace_src
-          mvn clean package -DskipTests
+          if [ "${{ env.TARGET_DEPLOY_SERVICE }}" != "all" ]; then
+            # 将逗号分隔的服务列表转化为 -pl 参数 (如: gateway,user-server -> -pl gateway,user-server -am)
+            PL_ARGS="-pl ${{ env.TARGET_DEPLOY_SERVICE }} -am"
+            echo "🎯 执行指定服务按需编译打包: mvn clean package -DskipTests $PL_ARGS"
+            mvn clean package -DskipTests $PL_ARGS
+          else
+            echo "🚀 执行全量编译打包: mvn clean package -DskipTests"
+            mvn clean package -DskipTests
+          fi
 
       # 8. 交付 target/*.jar 制品及 deploy/deploy.sh 到服务器指定目录
       - name: Deliver Artifacts via Python Script
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          TARGET_DEPLOY_SERVICE: ${{ env.TARGET_DEPLOY_SERVICE }}
         run: |
           python3 "${GITHUB_WORKSPACE}/.github/scripts/deliver.py"
 
       # 9. 触发回调服务器暂存区下的约定 Hook 脚本 (${TARGET_ARTIFACT_DIR}/deploy.sh)
       - name: Trigger Remote Hook Script
         run: |
-          ssh -n ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+          ssh -o ServerAliveInterval=5 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -n ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
             HOOK='${{ env.TARGET_HOOK_SCRIPT }}'
             DIR='${{ env.TARGET_ARTIFACT_DIR }}'
             if [ -f \"\$HOOK\" ]; then

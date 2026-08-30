@@ -46,21 +46,33 @@ def load_manifest_rules(src_dir):
         return rules
     return None
 
-def should_keep_jar(jar_path, src_dir, manifest_rules):
-    """依据 Manifest 规则判断 JAR 是否应该被交付"""
+def should_keep_jar(jar_path, src_dir, manifest_rules, target_services=None):
+    """依据 Manifest 规则及 target_services 选择性过滤 JAR"""
     filename = jar_path.name
 
     # 基础排除
     if filename.endswith(".original") or "wrapper" in filename:
         return False
 
-    # 若无 Manifest 规则，兜底全部保留
-    if manifest_rules is None:
-        return True
-
     # 提取模块名 (例如 workspace_src/gateway/target/gateway.jar -> gateway)
     rel_parts = jar_path.relative_to(src_dir).parts
     mod_dir = rel_parts[0] if len(rel_parts) > 2 else ""
+    service_name = mod_dir if mod_dir else filename.replace(".jar", "")
+
+    # 如果用户指定了具体服务列表 (不为 ['all'])
+    if target_services and "all" not in target_services:
+        matched_service = False
+        for target in target_services:
+            target = target.strip()
+            if target and (target == service_name or target in filename or target == mod_dir):
+                matched_service = True
+                break
+        if not matched_service:
+            return False
+
+    # 若无 Manifest 规则，兜底全部保留
+    if manifest_rules is None:
+        return True
 
     # 比对 Manifest 规则 (匹配模块名或 jar 文件名)
     for rule in manifest_rules:
@@ -76,6 +88,9 @@ def main():
     server_host = os.getenv("SERVER_HOST")
     server_user = os.getenv("SERVER_USER")
     artifact_dir = os.getenv("TARGET_ARTIFACT_DIR", "/opt/artifacts")
+    deploy_service_input = os.getenv("TARGET_DEPLOY_SERVICE", "all").strip()
+    target_services = [s.strip() for s in deploy_service_input.split(",") if s.strip()]
+
     src_dir = Path("workspace_src")
 
     if not server_host or not server_user:
@@ -86,6 +101,8 @@ def main():
         print("❌ 错误: workspace_src 目录不存在！")
         sys.exit(1)
 
+    print(f"🎯 选定的部署服务范围: {deploy_service_input} (解析列表: {target_services})")
+
     # 1. 解析业务仓库中的声明规范
     manifest_rules = load_manifest_rules(src_dir)
     if manifest_rules is not None:
@@ -95,7 +112,7 @@ def main():
 
     # 2. 检索并过滤目标 JAR 文件
     all_jars = list(src_dir.glob("**/target/*.jar"))
-    target_jars = [j for j in all_jars if should_keep_jar(j, src_dir, manifest_rules)]
+    target_jars = [j for j in all_jars if should_keep_jar(j, src_dir, manifest_rules, target_services)]
 
     print(f"📦 共检索到 {len(all_jars)} 个 JAR 包，经规则筛选后保留 {len(target_jars)} 个交付制品:")
     for j in target_jars:
@@ -106,13 +123,13 @@ def main():
 
     # 3. 传送制品前：安全清空服务器暂存目录
     print(f"\n🧹 正在清空服务器目标暂存目录: {artifact_dir} ...")
-    run_cmd(f'ssh -n {server_user}@{server_host} "mkdir -p {artifact_dir} && rm -rf {artifact_dir}/*"')
+    run_cmd(f'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -n {server_user}@{server_host} "mkdir -p {artifact_dir} && rm -rf {artifact_dir}/*"')
 
     # 4. 同步交付业务仓库自带的 deploy/deploy.sh 脚本 (如果有)
     repo_deploy_script = src_dir / "deploy" / "deploy.sh"
     if repo_deploy_script.exists() and repo_deploy_script.is_file():
         print(f"📜 发现业务仓库自带部署脚本: deploy/deploy.sh，同步分发至服务器...")
-        run_cmd(f'scp "{repo_deploy_script}" "{server_user}@{server_host}:{artifact_dir}/deploy.sh"')
+        run_cmd(f'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=5 "{repo_deploy_script}" "{server_user}@{server_host}:{artifact_dir}/deploy.sh"')
 
     # 5. 传输制品并生成 Markdown 列表
     artifact_list_lines = []
@@ -125,14 +142,14 @@ def main():
 
         if mod_dir and mod_dir != "target":
             target_path = f"{artifact_dir}/{mod_dir}/{filename}"
-            run_cmd(f'ssh -n {server_user}@{server_host} "mkdir -p {artifact_dir}/{mod_dir}"')
+            run_cmd(f'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -n {server_user}@{server_host} "mkdir -p {artifact_dir}/{mod_dir}"')
             print(f"🚀 [模块 {mod_dir}] 正在传输 {filename} ({filesize}) -> {target_path} ...")
-            run_cmd(f'scp "{jar_path}" "{server_user}@{server_host}:{target_path}"')
+            run_cmd(f'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=5 "{jar_path}" "{server_user}@{server_host}:{target_path}"')
             artifact_list_lines.append(f"- [{mod_dir}] {filename} ({filesize})")
         else:
             target_path = f"{artifact_dir}/{filename}"
             print(f"🚀 [根模块] 正在传输 {filename} ({filesize}) -> {target_path} ...")
-            run_cmd(f'scp "{jar_path}" "{server_user}@{server_host}:{target_path}"')
+            run_cmd(f'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=5 "{jar_path}" "{server_user}@{server_host}:{target_path}"')
             artifact_list_lines.append(f"- {filename} ({filesize})")
 
     # 6. 输出制品列表为 GITHUB_ENV 变量供钉钉通知使用
@@ -145,7 +162,7 @@ def main():
             f.write("EOF\n")
 
     print("\n=== 服务器端制品接收验证 ===")
-    res = run_cmd(f'ssh -n {server_user}@{server_host} "ls -la {artifact_dir}"')
+    res = run_cmd(f'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -n {server_user}@{server_host} "ls -la {artifact_dir}"')
     print(res)
 
 if __name__ == "__main__":
