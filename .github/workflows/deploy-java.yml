@@ -12,7 +12,7 @@ on:
         required: false
         default: 'main'
       deploy_service:
-        description: '指定部署的服务模块名称 (如: gateway 或 user-server，多个用逗号隔开，默认: all)'
+        description: '指定部署的服务模块名称 (如: service-a 或 service-b，多个用逗号隔开，默认: all)'
         required: false
         default: 'all'
       server_artifact_dir:
