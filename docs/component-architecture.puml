@@ -1,0 +1,64 @@
+@startuml Component Architecture Diagram
+!theme plain
+
+package "代码托管与触发层 (Source & Trigger Layer)" {
+  [开发者 / 运维控制台] as Console
+  [私有 Git 仓库 (Git Provider)] as GitServer
+}
+
+package "GitHub Actions 云端算力层 (CI/CD Engine Layer)" {
+  component "GitHub Actions Runner" as GARunner {
+    [deploy-java.yml\n(Workflow 编排)] as Workflow
+    [deliver.py\n(制品过滤与 SCP 分发引擎)] as DeliverScript
+    [send-dingtalk.js\n(通知渲染与加签引擎)] as DingScript
+  }
+  folder "模板与配置" {
+    [AGENTS.md]
+    [notify.md (Markdown 模板)] as NotifyTemplate
+  }
+}
+
+package "业务代码仓库规范 (Business Repo Declarative Specs)" {
+  [deploy/artifacts.manifest\n(制品声明文件)] as ManifestSpec
+  [deploy/deploy.sh\n(版本化部署 Hook 脚本)] as ScriptSpec
+}
+
+package "目标服务器运维层 (Target Server Infrastructure)" {
+  node "目标云服务器 (Target Server)" as TargetServer {
+    folder "制品暂存区 (${SERVER_ARTIFACT_DIR})" as ArtifactStorage {
+      [交付的制品包 (*.jar / *.tar.gz)] as JarArtifacts
+      [已同步的 deploy.sh] as DeliveredScript
+    }
+    
+    folder "应用运行区 (App Run Directory)" as AppRunDir {
+      [服务模块 A]
+      [服务模块 B]
+      [容器编排配置文件]
+    }
+    
+    [容器运行时 (Container Daemon)] as ContainerDaemon
+  }
+}
+
+package "消息通知服务 (Notification)" {
+  [IM 通知机器人 (Notification Bot)] as DingBot
+}
+
+Console --> Workflow : 1. 触发 Workflow (指定 git_ref)
+Workflow --> GitServer : 2. SSH 拉取业务源码
+GitServer --> ManifestSpec : 提取交付声明
+GitServer --> ScriptSpec : 提取 Hook 脚本
+
+Workflow --> DeliverScript : 3. 驱动 Python 交付引擎
+DeliverScript --> JarArtifacts : 4. SCP 传输过滤后的制品包
+DeliverScript --> DeliveredScript : 5. SCP 同步 deploy.sh
+
+Workflow --> DeliveredScript : 6. SSH 远程驱动执行 (bash deploy.sh)
+DeliveredScript --> AppRunDir : 7. 覆盖分发制品包
+DeliveredScript --> ContainerDaemon : 8. 触发增量容器重启与探活
+
+Workflow --> DingScript : 9. 触发通知引擎
+DingScript --> NotifyTemplate : 读取排版模板
+DingScript --> DingBot : 10. POST 推送 Markdown 消息通知
+
+@enduml

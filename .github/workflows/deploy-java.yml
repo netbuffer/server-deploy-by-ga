@@ -1,0 +1,133 @@
+name: Build & Deliver (Java Maven)
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_repo_url:
+        description: 'Git SSH 地址 (留空则默认使用 Secrets 中的 GIT_REPO_URL)'
+        required: false
+        default: ''
+      git_ref:
+        description: 'Git 分支 / Tag / Commit (默认: main)'
+        required: false
+        default: 'main'
+      server_artifact_dir:
+        description: '服务器接收制品的存放目录'
+        required: false
+        default: '/opt/artifacts'
+
+  repository_dispatch:
+    types: [deploy-command]
+
+jobs:
+  build-deliver-trigger:
+    runs-on: ubuntu-latest
+    env:
+      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+      DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+
+    steps:
+      # 1. 动态解析变量
+      - name: Resolve Environment Variables
+        run: |
+          REPO_URL="${{ inputs.git_repo_url }}"
+          if [ -z "$REPO_URL" ]; then
+            REPO_URL="${{ secrets.GIT_REPO_URL }}"
+          fi
+          echo "USING_REPO=$REPO_URL" >> $GITHUB_ENV
+
+          TARGET_REF="${{ inputs.git_ref }}"
+          if [ -z "$TARGET_REF" ]; then
+            TARGET_REF="main"
+          fi
+          echo "USING_REF=$TARGET_REF" >> $GITHUB_ENV
+
+          ARTIFACT_DIR="${{ inputs.server_artifact_dir }}"
+          if [ -z "$ARTIFACT_DIR" ]; then
+            ARTIFACT_DIR="${{ secrets.SERVER_ARTIFACT_DIR }}"
+          fi
+          if [ -z "$ARTIFACT_DIR" ]; then
+            ARTIFACT_DIR="/opt/artifacts"
+          fi
+          echo "TARGET_ARTIFACT_DIR=$ARTIFACT_DIR" >> $GITHUB_ENV
+          echo "TARGET_HOOK_SCRIPT=$ARTIFACT_DIR/deploy.sh" >> $GITHUB_ENV
+
+      # 2. 注入 SSH 密钥 (支持 Git 拉取与服务器 SSH/SCP 传输)
+      - name: Setup SSH Key Agent
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.GIT_SSH_KEY }}
+            ${{ secrets.SERVER_SSH_KEY }}
+
+      # 3. 动态添加 Known Hosts (零硬编码)
+      - name: Add Dynamic Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          GIT_DOMAIN=$(echo "${{ env.USING_REPO }}" | sed -e 's/.*@//' -e 's/:.*//' -e 's/\/.*//')
+          if [ -n "$GIT_DOMAIN" ]; then
+            ssh-keyscan -H "$GIT_DOMAIN" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          if [ -n "${{ secrets.SERVER_HOST }}" ]; then
+            ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+
+      # 4. 显式 Checkout 本影子仓库代码 (使用 v7.0.1 标签)
+      - name: Checkout Shadow Repository Code
+        uses: actions/checkout@v7.0.1
+
+      # 5. 从第三方 Git 仓库 Clone 指定分支/Tag 业务源码
+      - name: Clone Business Source Code
+        run: |
+          echo "正在从 ${{ env.USING_REPO }} 拉取分支/Tag [${{ env.USING_REF }}] ..."
+          # 兼容拉取分支/Tag，若未找到单分支则回退常规 clone 并 checkout
+          git clone --branch "${{ env.USING_REF }}" "${{ env.USING_REPO }}" workspace_src 2>/dev/null || {
+            echo "Direct branch clone failed, falling back to full clone and checkout..."
+            git clone "${{ env.USING_REPO }}" workspace_src
+            cd workspace_src
+            git checkout "${{ env.USING_REF }}"
+          }
+
+      # 6. 配置 Java 环境 (v6.0.0)
+      - name: Set up Java Environment
+        uses: actions/setup-java@v6.0.0
+        with:
+          java-version: ${{ vars.JAVA_VERSION || '21' }}
+          distribution: 'temurin'
+          cache: maven
+
+      # 7. 云端编译打包制品 (Java Maven)
+      - name: Build Artifacts with Maven
+        run: |
+          cd workspace_src
+          mvn clean package -DskipTests
+
+      # 8. 交付 target/*.jar 制品及 deploy/deploy.sh 到服务器指定目录
+      - name: Deliver Artifacts via Python Script
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/deliver.py"
+
+      # 9. 触发回调服务器暂存区下的约定 Hook 脚本 (${TARGET_ARTIFACT_DIR}/deploy.sh)
+      - name: Trigger Remote Hook Script
+        run: |
+          ssh -n ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+            HOOK='${{ env.TARGET_HOOK_SCRIPT }}'
+            DIR='${{ env.TARGET_ARTIFACT_DIR }}'
+            if [ -f \"\$HOOK\" ]; then
+              echo \"Triggering server hook script via bash: \$HOOK ...\"
+              bash \"\$HOOK\" \"\$DIR\"
+            else
+              echo \"Notice: Hook script \$HOOK not found. Artifacts successfully delivered to \$DIR.\"
+            fi
+          "
+
+      # 10. 部署结果钉钉回调通知
+      - name: Notify Build & Delivery Result
+        if: always() && env.DINGTALK_WEBHOOK != ''
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          node "${GITHUB_WORKSPACE}/.github/scripts/send-dingtalk.js"

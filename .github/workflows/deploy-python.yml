@@ -1,0 +1,32 @@
+name: Build & Deliver (Python)
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_repo_url:
+        description: 'Git SSH 地址 (留空则默认使用 Secrets 中的 GIT_REPO_URL)'
+        required: false
+        default: ''
+      git_ref:
+        description: 'Git 分支 / Tag / Commit (默认: main)'
+        required: false
+        default: 'main'
+      server_artifact_dir:
+        description: '服务器接收制品的存放目录'
+        required: false
+        default: '/opt/artifacts'
+
+  repository_dispatch:
+    types: [deploy-command]
+
+jobs:
+  build-deliver-placeholder:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Placeholder Step for Python
+        run: |
+          echo "=========================================================="
+          echo "🚀 Build & Deliver (Python) Pipeline Placeholder"
+          echo "ℹ️ 分支/Tag: ${{ inputs.git_ref || 'main' }}"
+          echo "=========================================================="
