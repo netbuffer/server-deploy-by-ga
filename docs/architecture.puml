@@ -33,7 +33,7 @@ Dev -> GA: 触发 Workflow\n(可选指定 git_repo_url / git_ref)
 
 == 阶段二：源码检出与云端编译 ==
 GA -> GitRepo: 1. 使用 GIT_SSH_KEY 克隆业务源码 (git clone)
-GitRepo --> GA: 返回代码包 (含 deploy/artifacts.manifest & deploy/deploy.sh)
+GitRepo --> GA: 返回代码包 (含 deploy/artifacts.manifest & deploy/.github/deploy.sh)
 GA -> GA: 2. 配置云端编译环境 (JDK / Node / Go)
 GA -> GA: 3. 执行编译打包 (mvn clean package)
 
@@ -42,7 +42,7 @@ GA -> Deliver: 4. 执行 Python 交付脚本 (deliver.py)
 Deliver -> GA: 读取 deploy/artifacts.manifest 声明规则
 Deliver -> ArtifactDir: 5. SSH 远程清空暂存目录 (rm -rf ${SERVER_ARTIFACT_DIR}/*)
 Deliver -> ArtifactDir: 6. SCP 上传匹配的独立服务制品文件
-Deliver -> ArtifactDir: 7. SCP 上传版本化 deploy/deploy.sh 脚本
+Deliver -> ArtifactDir: 7. SCP 上传版本化 deploy/.github/deploy.sh 脚本
 Deliver -> GA: 导出交付清单 (${ARTIFACT_LIST}) 供通知消费
 
 == 阶段四：触发服务器回调 Hook 执行本地部署 ==

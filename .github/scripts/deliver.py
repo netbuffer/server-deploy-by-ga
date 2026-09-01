@@ -4,7 +4,7 @@
 制品交付自动化脚本 (deliver.py)
 职责: 
   1. 解析业务仓库中固定的 deploy/artifacts.manifest 声明文件 (若无则回退兜底模式)
-  2. 若业务仓库提供 deploy/deploy.sh 部署回调脚本，自动同步传输至服务器
+  2. 若业务仓库提供 deploy/.github/deploy.sh 部署回调脚本，自动同步传输至服务器
   3. 传送制品前安全清空服务器目标暂存目录
   4. 传输匹配的制品文件到服务器，生成 Markdown 格式的制品清单供钉钉通知使用
 """
@@ -125,10 +125,10 @@ def main():
     print(f"\n🧹 正在清空服务器目标暂存目录: {artifact_dir} ...")
     run_cmd(f'ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=5 -n {server_user}@{server_host} "mkdir -p {artifact_dir} && rm -rf {artifact_dir}/*"')
 
-    # 4. 同步交付业务仓库自带的 deploy/deploy.sh 脚本 (如果有)
-    repo_deploy_script = src_dir / "deploy" / "deploy.sh"
+    # 4. 同步交付业务仓库自带的 deploy/.github/deploy.sh 脚本 (如果有)
+    repo_deploy_script = src_dir / "deploy" / ".github" / "deploy.sh"
     if repo_deploy_script.exists() and repo_deploy_script.is_file():
-        print(f"📜 发现业务仓库自带部署脚本: deploy/deploy.sh，同步分发至服务器...")
+        print(f"📜 发现业务仓库自带部署脚本: deploy/.github/deploy.sh，同步分发至服务器...")
         run_cmd(f'scp -o ServerAliveInterval=30 -o ServerAliveCountMax=5 "{repo_deploy_script}" "{server_user}@{server_host}:{artifact_dir}/deploy.sh"')
 
     # 5. 传输制品并生成 Markdown 列表

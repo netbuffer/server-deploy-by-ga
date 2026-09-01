@@ -26,7 +26,7 @@
 1. **算力与运维彻底解耦**：GitHub Actions 仅作为纯粹的构建与传输管道，服务器如何重启服务（`docker compose` / `systemctl` / `PM2`）完全由服务器端 Shell 脚本自主决定；
 2. **声明式 GitOps 规范**：
    * **制品过滤规范**：业务仓库可通过 `deploy/artifacts.manifest` 自由配置需要分发的模块白名单；
-   * **部署脚本规范**：业务仓库可通过 `deploy/deploy.sh` 随代码版本化提交部署逻辑，无需在服务器手工驻留脚本；
+   * **部署脚本规范**：业务仓库可通过 `deploy/.github/deploy.sh` 随代码版本化提交部署逻辑，无需在服务器手工驻留脚本；
 3. **多语言与多分支灵活调度**：
    * 针对不同语言栈（Java Maven、Node.js 前端、Go、Python）独立编排 Workflow 管道；
    * 支持通过 `git_ref` 动态选择部署任意 Branch（如 `main`/`master`/`dev`）、Release Tag 或 Commit Hash。
@@ -89,7 +89,7 @@ wechat-third-platform
 intelli-edu-service
 ```
 
-### 2. `deploy/deploy.sh` (远程回调部署脚本)
+### 2. `deploy/.github/deploy.sh` (远程回调部署脚本)
 随业务代码提交的增量重启与健康检查脚本，脚本接收第一参数 `$1` 为 `${SERVER_ARTIFACT_DIR}` 暂存区路径：
 ```bash
 #!/usr/bin/env bash

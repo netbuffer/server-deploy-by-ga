@@ -120,7 +120,7 @@ jobs:
             mvn clean package -DskipTests
           fi
 
-      # 8. 交付 target/*.jar 制品及 deploy/deploy.sh 到服务器指定目录
+      # 8. 交付 target/*.jar 制品及 deploy/.github/deploy.sh 到服务器指定目录
       - name: Deliver Artifacts via Python Script
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}

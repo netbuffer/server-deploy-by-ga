@@ -20,7 +20,7 @@ package "GitHub Actions 云端算力层 (CI/CD Engine Layer)" {
 
 package "业务代码仓库规范 (Business Repo Declarative Specs)" {
   [deploy/artifacts.manifest\n(制品声明文件)] as ManifestSpec
-  [deploy/deploy.sh\n(版本化部署 Hook 脚本)] as ScriptSpec
+  [deploy/.github/deploy.sh\n(版本化部署 Hook 脚本)] as ScriptSpec
 }
 
 package "目标服务器运维层 (Target Server Infrastructure)" {
